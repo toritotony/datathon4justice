@@ -159,24 +159,25 @@ tract_state_data <- us_tract_data_to_join %>%
 
 # function to extract and dynamically name dataset for tracts in question
 
-################################## DATA PLOTTING FUNCTIONS ######################################
+################################## PLOTTING #########################################
 
-plot_census_data <- function(stateName, censusVariable, countyName = NULL, 
-                             title = NULL, x_label = NULL, y_label = NULL, 
-                             point_color = "blue", point_size = 3) {
+# Function to plot census and food access data at the tract level
+plot_census_food_data_tract <- function(stateName, censusVariable, countyName = NULL, 
+                                        title = NULL, x_label = NULL, y_label = NULL, 
+                                        point_color = "blue", point_size = 3) {
   
   # Validate that the state exists in the data
-  if (!any(str_detect(us_tract_data$NAME, stateName))) {
+  if (!any(str_detect(join_tract_food_access$NAME, stateName))) {
     stop("State name not found in the data. Please provide a valid state name.")
   }
   
   # Validate that the variable exists in the data
-  if (!censusVariable %in% unique(us_tract_data$variable)) {
+  if (!censusVariable %in% unique(join_tract_food_access$variable)) {
     stop("Census variable not found in the data. Please provide a valid variable code.")
   }
   
   # Filter the data based on state, county (if provided), and variable
-  plot_data <- us_tract_data %>%
+  plot_data <- join_tract_food_access %>%
     filter(variable == censusVariable, 
            str_detect(NAME, stateName),
            if (!is.null(countyName)) str_detect(NAME, countyName) else TRUE)
@@ -205,11 +206,49 @@ plot_census_data <- function(stateName, censusVariable, countyName = NULL,
   return(p)
 }
 
-# Example usage:
-# plot_census_data("Minnesota", "B01003_001", "Ramsey")
+plot_census_food_data_tract(state="Illinois", censusVariable = "PovertyRate", )
 
+################################# CORRELATIONS ######################################
 
-################################## STATISTICAL FUNCTIONS #########################################
-
-###################### HYPOTHESIS TESTING (IF WE FIND ASSOCIATIONS) #############################
-
+# Function to calculate correlation between two variables at the tract level
+plot_correlation_food_access_tract <- function(state, var1, var2, county = NULL) {
+  
+  # Fetch data for the first variable from the tract-food-access data
+  data_var1 <- join_tract_food_access %>%
+    filter(variable == var1, str_detect(NAME, state))
+  
+  # Fetch data for the second variable from the tract-food-access data
+  data_var2 <- join_tract_food_access %>%
+    filter(variable == var2, str_detect(NAME, state))
+  
+  # Join the two datasets by GEOID (common geographic ID for tracts)
+  combined_data <- data_var1 %>%
+    select(GEOID, estimate_var1 = estimate) %>%
+    inner_join(data_var2 %>%
+                 select(GEOID, estimate_var2 = estimate), by = "GEOID")
+  
+  # Filter by county if provided
+  if (!is.null(county)) {
+    combined_data <- combined_data %>%
+      filter(str_detect(NAME, county))
+  }
+  
+  # Check if the filtered data is empty
+  if (nrow(combined_data) == 0) {
+    stop("No data found for the specified region. Please check the county or variable names.")
+  }
+  
+  # Calculate the correlation between the two variables
+  correlation_value <- cor(combined_data$estimate_var1, combined_data$estimate_var2, use = "complete.obs")
+  
+  # Output the correlation value
+  print(paste("Correlation between", var1, "and", var2, "is:", round(correlation_value, 3)))
+  
+  # Create a scatter plot to visualize the correlation
+  ggplot(combined_data, aes(x = estimate_var1, y = estimate_var2)) +
+    geom_point(alpha = 0.6) +
+    labs(title = paste("Scatter Plot of", var1, "vs.", var2, "in", state,
+                       ifelse(!is.null(county), paste("County:", county), "")),
+         x = var1, y = var2) +
+    theme_minimal()
+}
