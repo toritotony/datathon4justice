@@ -36,9 +36,47 @@ specified_vars <- c("B01003_001", "B01002_001", "B19013_001", "DP03_0009PE", "DP
 
 new_vars <- c("B25122", "B25012", "B28002_005", "B28002_004", "B22002_002")
 
-# get tract variable data for all states 
 us <- unique(fips_codes$state)[1:51]
 
+# get state variable data nationally
+us_state_data <- get_acs(geography = "state", 
+                      year = 2022,
+                      survey = "acs5", 
+                      variables = c(totalpop = "B01003_001", 
+                                    medianage = "B01002_001",
+                                    medianincome = "B19013_001",
+                                    unemployrate16plus = "DP03_0009PE",
+                                    povertyratepop = "DP03_0128PE",
+                                    percenthousesSNAP = "DP03_0074PE",
+                                    percentpeople25bachelors = "DP02_0068PE",
+                                    estpeople25plusbachelors = "DP02_0068E",
+                                    percent25highschoolormore = "DP02_0067PE",
+                                    percentcivilianwohealthinsur = "DP03_0099PE",
+                                    totalnumhouseholds = "DP02_0001E",
+                                    numpeopletravelbyvehicle = "B08006_002E",
+                                    meantraveltimeforwork = "DP03_0025E"))
+
+# get state variable data nationally
+us_city_data <- map_df(us, function(x) { 
+                         get_acs(geography = "place", 
+                         state = x,
+                         year = 2022,
+                         survey = "acs5", 
+                         variables = c(totalpop = "B01003_001", 
+                                       medianage = "B01002_001",
+                                       medianincome = "B19013_001",
+                                       unemployrate16plus = "DP03_0009PE",
+                                       povertyratepop = "DP03_0128PE",
+                                       percenthousesSNAP = "DP03_0074PE",
+                                       percentpeople25bachelors = "DP02_0068PE",
+                                       estpeople25plusbachelors = "DP02_0068E",
+                                       percent25highschoolormore = "DP02_0067PE",
+                                       percentcivilianwohealthinsur = "DP03_0099PE",
+                                       totalnumhouseholds = "DP02_0001E",
+                                       numpeopletravelbyvehicle = "B08006_002E",
+                                       meantraveltimeforwork = "DP03_0025E"))})
+
+# get tract variable data for all states 
 us_tract_data <- map_df(us, function(x) {
   get_acs(survey = "acs5", geography = "tract", year = 2022, geometry = TRUE, variables = c(totalpop = "B01003_001", 
                                                                            medianage = "B01002_001",
@@ -55,8 +93,47 @@ us_tract_data <- map_df(us, function(x) {
                                                                            meantraveltimeforwork = "DP03_0025E"), state = x)
 })
 
-# filtered us tract data by specified variables (NEED TO FIND CODES FOR TRACT INTEAD OF STATE OR JOIN WITH ACS STATE DATA)
+# get food access variables from USDA
 
+food_access_2019 <- read_excel("C:\\Users\\wolfe\\OneDrive\\Desktop\\datathon4justice\\data-sources\\FoodAccessResearchAtlasData2019.xlsx")
+food_access_2019 <- food_access_2019 %>%
+  rename(GEOID = CensusTract)
+
+################################### DATA TRANSFORMATION #########################################
+
+# group by GEOID and provide averages for values
+us_tract_data_grouped <- us_tract_data %>%
+  group_by(GEOID, variable) %>%  # Group by GEOID and variable
+  summarize(mean_estimate = mean(estimate, na.rm = TRUE),  # Calculate mean estimate
+            mean_moe = mean(moe, na.rm = TRUE)) 
+
+# group by GEOID and provide averages for values
+us_state_data_grouped <- us_state_data %>%
+  group_by(GEOID, variable) %>%  # Group by GEOID and variable
+  summarize(mean_estimate = mean(estimate, na.rm = TRUE),  # Calculate mean estimate
+            mean_moe = mean(moe, na.rm = TRUE)) 
+
+# join food access and tract data for Beth 
+
+join_tract_food_access <- full_join(us_tract_data, food_access_2019, by = "GEOID")
+
+# filtered us state data by specified variables (NEED TO FIND NEW CODES OR DATA FOR VARS NOT FOUND)
+us_state_data_filtered <- us_state_data %>%
+  filter(variable %in% c("totalpop", 
+                         "medianage",
+                         "medianincome",
+                         "unemployrate16plus",
+                         "povertyratepop",
+                         "percenthousesSNAP",
+                         "percentpeople25bachelors",
+                         "estpeople25plusbachelors",
+                         "percent25highschoolormore",
+                         "percentcivilianwohealthinsur",
+                         "totalnumhouseholds",
+                         "numpeopletravelbyvehicle",
+                         "meantraveltimeforwork"))
+
+# filtered us tract data by specified variables 
 us_tract_data_filtered <- us_tract_data %>%
   filter(variable %in% c("totalpop", 
                          "medianage",
@@ -72,22 +149,15 @@ us_tract_data_filtered <- us_tract_data %>%
                          "numpeopletravelbyvehicle",
                          "meantraveltimeforwork"))
 
-# get food access variables from USDA
+# join city-tract-state tables into one table
+us_tract_data_to_join <- us_tract_data %>%
+  mutate(GEOID = substr(GEOID, 1, 2))
 
-food_access_2019 <- read_excel("C:\\Users\\wolfe\\OneDrive\\Desktop\\datathon4justice\\data-sources\\FoodAccessResearchAtlasData2019.xlsx")
-food_access_2019 <- food_access_2019 %>%
-  rename(GEOID = CensusTract)
+# Join tract data with state data based on state_fips (first two chars of GEOID)
+tract_state_data <- us_tract_data_to_join %>%
+  left_join(us_state_data, by = "GEOID")
 
-# join food access and tract data for Beth 
-
-join_tract_food_access <- full_join(us_tract_data, food_access_2019, by = "GEOID")
-
-################################### DATA TRANSFORMATION #########################################
-
-us_tract_data_grouped <- us_tract_data %>%
-  group_by(GEOID) %>%
-  summarize(sumest = sum(estimate), 
-            summoe = moe_sum(moe, estimate))
+# function to extract and dynamically name dataset for tracts in question
 
 ################################## DATA PLOTTING FUNCTIONS ######################################
 
